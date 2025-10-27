@@ -511,17 +511,25 @@ def should_skip_article(row, driver, skip_notice=True, skip_recommend=True):
                         tbody_index = idx
                         break
                 
-                # 0: 공지사항, 1: 추천글, 2: 일반글
+                # tbody 개수에 따라 구분
+                # - 3개: 0=공지, 1=추천, 2=일반
+                # - 1개: 전부 일반글 (페이지 2 이후)
                 Logger.debug(f"tbody 인덱스: {tbody_index} (총 {len(all_tbodies)}개 tbody)")
                 
-                if tbody_index == 0 and skip_notice:
-                    Logger.debug(f"공지사항으로 스킵")
-                    return (True, 'notice')
-                elif tbody_index == 1 and skip_recommend:
-                    Logger.debug(f"추천글로 스킵")
-                    return (True, 'recommend')
-                elif tbody_index >= 2:
-                    Logger.debug(f"일반글로 인식 (tbody_index={tbody_index})")
+                # tbody가 3개 이상일 때만 인덱스로 구분
+                if len(all_tbodies) >= 3:
+                    if tbody_index == 0 and skip_notice:
+                        Logger.debug(f"공지사항으로 스킵")
+                        return (True, 'notice')
+                    elif tbody_index == 1 and skip_recommend:
+                        Logger.debug(f"추천글로 스킵")
+                        return (True, 'recommend')
+                    elif tbody_index >= 2:
+                        Logger.debug(f"일반글로 인식 (tbody_index={tbody_index})")
+                        return (False, None)
+                else:
+                    # tbody가 1-2개면 전부 일반글
+                    Logger.debug(f"일반글로 인식 (tbody 개수: {len(all_tbodies)})")
                     return (False, None)
     except Exception as e:
         Logger.debug(f"필터링 확인 오류: {e}")
