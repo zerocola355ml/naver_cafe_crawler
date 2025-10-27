@@ -266,6 +266,62 @@ def get_article_stats(conn):
 
 # ===================== 유틸리티 함수 =====================
 
+def parse_article_date(date_str):
+    """
+    게시글 작성일을 파싱합니다.
+    
+    Args:
+        date_str: 날짜 문자열 (예: "09:05" 또는 "2025.10.26.")
+    
+    Returns:
+        datetime: 파싱된 날짜 또는 None
+    """
+    try:
+        date_str = date_str.strip()
+        
+        # 시간 형태 (오늘 게시글): "09:05"
+        if ':' in date_str and '.' not in date_str:
+            today = datetime.now()
+            time_parts = date_str.split(':')
+            hour = int(time_parts[0])
+            minute = int(time_parts[1])
+            return today.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        
+        # 날짜 형태: "2025.10.26." 또는 "2025.10.26"
+        elif '.' in date_str:
+            date_str = date_str.rstrip('.')
+            parts = date_str.split('.')
+            if len(parts) >= 3:
+                year = int(parts[0])
+                month = int(parts[1])
+                day = int(parts[2])
+                return datetime(year, month, day)
+        
+        return None
+    except Exception as e:
+        Logger.debug(f"날짜 파싱 오류: {date_str} - {e}")
+        return None
+
+
+def is_article_too_old(date_str, days_limit):
+    """
+    게시글이 너무 오래되었는지 확인합니다.
+    
+    Args:
+        date_str: 날짜 문자열
+        days_limit: 며칠 전까지 수집할지
+    
+    Returns:
+        bool: True면 너무 오래됨 (중단해야 함)
+    """
+    article_date = parse_article_date(date_str)
+    if not article_date:
+        return False
+    
+    cutoff_date = datetime.now() - timedelta(days=days_limit)
+    return article_date < cutoff_date
+
+
 def setup_chrome_driver():
     """
     Chrome WebDriver를 설정하고 반환합니다.
