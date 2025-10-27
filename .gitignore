@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and debug files
+*.log
+debug_*.html
+debug_*.png
+scraped_articles.txt
+naver_cafe_articles.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.backup
+*.broken
+
