@@ -322,6 +322,28 @@ def is_article_too_old(date_str, days_limit):
     return article_date < cutoff_date
 
 
+def generate_page_url(base_url, page_number):
+    """
+    페이지 번호를 포함한 URL을 생성합니다.
+    
+    Args:
+        base_url: 기본 URL
+        page_number: 페이지 번호
+    
+    Returns:
+        str: 페이지 URL
+    """
+    # URL에서 page= 부분을 찾아서 교체
+    if 'page=' in base_url:
+        # 기존 page= 파라미터 교체
+        return re.sub(r'page=\d+', f'page={page_number}', base_url)
+    elif '?' in base_url:
+        # page 파라미터 추가
+        return f"{base_url}&page={page_number}"
+    else:
+        return f"{base_url}?page={page_number}"
+
+
 def setup_chrome_driver():
     """
     Chrome WebDriver를 설정하고 반환합니다.
