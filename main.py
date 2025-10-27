@@ -82,9 +82,9 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용 여부
-    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-    PROFILE_DIRECTORY = "Default"
-    
+CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+PROFILE_DIRECTORY = "Default"
+
     # 타임아웃 설정
     PAGE_LOAD_WAIT = 10     # 페이지 로딩 대기 시간 (초)
     ELEMENT_WAIT = 20       # 요소 대기 시간 (초)
@@ -96,6 +96,10 @@ class Config:
     # 데이터베이스 설정
     DB_FILE = "naver_cafe_articles.db"  # SQLite 데이터베이스 파일명
     RETENTION_DAYS = 15                  # 데이터 보관 기간 (일)
+    
+    # 스크래핑 범위 설정
+    SCRAPE_DAYS = 7         # 최근 며칠 동안의 게시글만 수집 (오늘부터 N일 전까지)
+    MAX_PAGES = 50          # 최대 페이지 수 (무한 루프 방지)
     
     # CSS Selector 정의
     SELECTORS = {
