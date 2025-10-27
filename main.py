@@ -557,6 +557,90 @@ def save_articles_to_file(articles, url, selector, filename="scraped_articles.tx
 
 # ===================== 메인 함수 =====================
 
+def scrape_single_page(driver, wait):
+    """
+    현재 페이지의 게시글을 스크래핑합니다.
+    
+    Args:
+        driver: Selenium WebDriver
+        wait: WebDriverWait 객체
+    
+    Returns:
+        tuple: (articles: list, should_stop: bool)
+               - articles: 추출된 게시글 리스트
+               - should_stop: 오래된 게시글을 만나 중단해야 하는지 여부
+    """
+    articles = []
+    should_stop = False
+    
+    try:
+        # 페이지 완전 로딩 대기
+        Logger.debug("페이지가 완전히 로드될 때까지 대기 중...")
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.article-table")))
+            Logger.debug("페이지 로드 완료!")
+            time.sleep(2)
+        except TimeoutException:
+            Logger.warning("article-table을 찾을 수 없습니다.")
+            return articles, True  # 중단
+        
+        # 게시글 행(tr) 찾기
+        Logger.debug("게시글 행을 찾는 중...")
+        article_rows = []
+        successful_selector = None
+        
+        for i, selector in enumerate(Config.SELECTORS['article_rows'], 1):
+            try:
+                Logger.debug(f"[{i}/{len(Config.SELECTORS['article_rows'])}] 시도 중: {selector}")
+                temp_wait = WebDriverWait(driver, Config.SELECTOR_WAIT)
+                temp_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                article_rows = driver.find_elements(By.CSS_SELECTOR, selector)
+                
+                if article_rows and len(article_rows) > 0:
+                    successful_selector = selector
+                    Logger.debug(f"셀렉터 성공!")
+                    break
+            except TimeoutException:
+                continue
+            except Exception as e:
+                Logger.debug(f"오류: {e}")
+                continue
+        
+        if not article_rows:
+            Logger.warning("게시글을 찾지 못했습니다.")
+            return articles, True
+        
+        Logger.debug(f"총 {len(article_rows)}개의 행 발견")
+        
+        # 각 행에서 게시글 정보 추출
+        for row in article_rows:
+            # 필터링 확인
+            skip, reason = should_skip_article(row, driver, Config.SKIP_NOTICE, Config.SKIP_RECOMMEND)
+            if skip:
+                continue
+            
+            # 데이터 추출
+            article_data = extract_article_data(row)
+            if not article_data:
+                continue
+            
+            # 날짜 확인 - 너무 오래된 게시글이면 중단
+            if article_data['date']:
+                if is_article_too_old(article_data['date'], Config.SCRAPE_DAYS):
+                    Logger.info(f"📅 {Config.SCRAPE_DAYS}일 이전 게시글 발견 (날짜: {article_data['date']}) - 스크래핑 중단")
+                    should_stop = True
+                    break
+            
+            articles.append(article_data)
+        
+        Logger.debug(f"추출된 게시글: {len(articles)}개")
+        
+    except Exception as e:
+        Logger.error(f"페이지 스크래핑 오류: {e}")
+    
+    return articles, should_stop
+
+
 def scrape_naver_cafe_titles(url):
     """
     네이버 카페 게시글을 스크래핑하고 데이터베이스에 저장합니다.
