@@ -412,20 +412,21 @@ def extract_article_data(row):
         except:
             pass
         
-        # 제목 추출 (수)
+        # 제목 추출 (필수)
         try:
             title_link = row.find_element(By.CSS_SELECTOR, Config.SELECTORS['title'])
             article_data['title'] = title_link.text.strip()
             article_data['url'] = title_link.get_attribute('href')
             
-            # ID가 으로 URL에서 추출
+            # ID가 없으면 URL에서 추출
             if not article_data['article_id']:
                 url = article_data['url']
                 if 'articleid=' in url.lower():
                     article_data['article_id'] = url.split('articleid=')[1].split('&')[0]
                 elif '/articles/' in url:
                     article_data['article_id'] = url.split('/articles/')[1].split('?')[0]
-        except:
+        except Exception as e:
+            Logger.debug(f"제목 추출 실패: {e}")
             return None
         
         # 댓글 수 추출
@@ -510,13 +511,20 @@ def should_skip_article(row, driver, skip_notice=True, skip_recommend=True):
                         tbody_index = idx
                         break
                 
-                # 0: 공지 항목, 1: 추천글, 2: 일반글
+                # 0: 공지사항, 1: 추천글, 2: 일반글
+                Logger.debug(f"tbody 인덱스: {tbody_index} (총 {len(all_tbodies)}개 tbody)")
+                
                 if tbody_index == 0 and skip_notice:
+                    Logger.debug(f"공지사항으로 스킵")
                     return (True, 'notice')
                 elif tbody_index == 1 and skip_recommend:
+                    Logger.debug(f"추천글로 스킵")
                     return (True, 'recommend')
+                elif tbody_index >= 2:
+                    Logger.debug(f"일반글로 인식 (tbody_index={tbody_index})")
+                    return (False, None)
     except Exception as e:
-        Logger.debug(f"오류: {e}")
+        Logger.debug(f"필터링 확인 오류: {e}")
     
     return (False, None)
 
@@ -622,21 +630,29 @@ def scrape_single_page(driver, wait):
             Logger.warning("게시글??찾�? 못했?�니??")
             return articles, True
         
-        Logger.debug(f"�?{len(article_rows)}개의 ??발견")
+        Logger.debug(f"총 {len(article_rows)}개의 행 발견")
         
-        # �??�에??게시글 ?�보 추출
-        for row in article_rows:
-            # ?�터�??�인
+        # 각 행에서 게시글 정보 추출
+        skipped_count = 0
+        for idx, row in enumerate(article_rows, 1):
+            Logger.debug(f"\n--- 행 {idx}/{len(article_rows)} 처리 중 ---")
+            
+            # 필터링 확인
             skip, reason = should_skip_article(row, driver, Config.SKIP_NOTICE, Config.SKIP_RECOMMEND)
             if skip:
+                Logger.debug(f"행 {idx}: {reason}으로 스킵됨")
+                skipped_count += 1
                 continue
             
-            # ?�이??추출
+            # 데이터 추출
             article_data = extract_article_data(row)
             if not article_data:
+                Logger.debug(f"행 {idx}: 데이터 추출 실패")
                 continue
             
-            # ?�짜 ?�인 - ?�무 ?�래??게시글?�면 중단
+            Logger.debug(f"행 {idx}: 추출 성공 - 제목: {article_data['title'][:30] if article_data['title'] else '(제목없음)'}...")
+            
+            # 날짜 확인 - 너무 오래된 게시글이면 중단
             if article_data['date']:
                 if is_article_too_old(article_data['date'], Config.SCRAPE_DAYS):
                     Logger.info(f"?�� {Config.SCRAPE_DAYS}???�전 게시글 발견 (?�짜: {article_data['date']}) - ?�크?�핑 중단")
@@ -645,7 +661,10 @@ def scrape_single_page(driver, wait):
             
             articles.append(article_data)
         
-        Logger.debug(f"추출된 게시글: {len(articles)}개")
+        Logger.debug(f"\n=== 페이지 처리 결과 ===")
+        Logger.debug(f"총 행 수: {len(article_rows)}개")
+        Logger.debug(f"스킵됨: {skipped_count}개")
+        Logger.debug(f"추출 성공: {len(articles)}개")
 
     except Exception as e:
         Logger.error(f"페이지 스크래핑 오류: {e}")
