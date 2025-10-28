@@ -74,7 +74,7 @@ class Config:
     DEFAULT_URL = "https://cafe.naver.com/f-e/cafes/10094499/menus/599?viewType=L&page=1"
     
     # 로깅 설정
-    LOG_LEVEL = Logger.VERBOSE  # VERBOSE(자세), INFO(보통), QUIET(최소)
+    LOG_LEVEL = Logger.INFO  # VERBOSE(자세), INFO(보통), QUIET(최소)
     
     # 게시글 필터 설정
     SKIP_NOTICE = True      # 공지 외
@@ -82,12 +82,12 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용
-    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-    PROFILE_DIRECTORY = "Default"
+CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+PROFILE_DIRECTORY = "Default"
 
     # 페이지 로딩 설정
-    PAGE_LOAD_WAIT = 15     # 페이지 로딩 대기 시간 (초)
-    ELEMENT_WAIT = 20       # 요소 대기 시간 (초)
+    PAGE_LOAD_WAIT =5     # 페이지 로딩 대기 시간 (초)
+    ELEMENT_WAIT = 10       # 요소 대기 시간 (초)
     SELECTOR_WAIT = 5       # 선택자 대기 시간 (초)
     
     # 출력 파일 설정
@@ -100,6 +100,7 @@ class Config:
     # 스크래핑 범위 설정
     SCRAPE_DAYS = 7         # 최근 며칠 동안의 게시글만 수집 (오늘부터 N일 전까지)
     MAX_PAGES = 50          # 최대 페이지 수 (무한 루프 방지)
+    CONSECUTIVE_SEEN_LIMIT = 15  # 연속 N개 이미 본 게시글이면 중단 (페이지 밀림 방지)
     
     # CSS Selector 설정
     SELECTORS = {
@@ -573,13 +574,14 @@ def save_articles_to_file(articles, url, selector, filename="scraped_articles.tx
 
 # ===================== 메인 함수 =====================
 
-def scrape_single_page(driver, wait):
+def scrape_single_page(driver, wait, seen_article_ids):
     """
     현재 페이지의 게시글을 스크래핑합니다.
     
     Args:
         driver: Selenium WebDriver
         wait: WebDriverWait 객체
+        seen_article_ids: 이번 세션에서 본 article_id Set
     
     Returns:
         tuple: (articles: list, should_stop: bool)
@@ -588,6 +590,7 @@ def scrape_single_page(driver, wait):
     """
     articles = []
     should_stop = False
+    consecutive_seen = 0  # 연속으로 이미 본 게시글 카운터
     
     try:
         # 페이지 완전 로딩 대기
@@ -663,9 +666,26 @@ def scrape_single_page(driver, wait):
             # 날짜 확인 - 너무 오래된 게시글이면 중단
             if article_data['date']:
                 if is_article_too_old(article_data['date'], Config.SCRAPE_DAYS):
-                    Logger.info(f"?�� {Config.SCRAPE_DAYS}???�전 게시글 발견 (?�짜: {article_data['date']}) - ?�크?�핑 중단")
+                    Logger.info(f"📅 {Config.SCRAPE_DAYS}일 이전 게시글 발견 (날짜: {article_data['date']}) - 스크래핑 중단")
                     should_stop = True
                     break
+            
+            # 이미 본 게시글 확인 (연속 카운터)
+            article_id = article_data['article_id']
+            if article_id in seen_article_ids:
+                consecutive_seen += 1
+                Logger.debug(f"행 {idx}: 이미 본 게시글 (연속 {consecutive_seen}개)")
+                
+                # 연속 N개 이상이면 중단
+                if consecutive_seen >= Config.CONSECUTIVE_SEEN_LIMIT:
+                    Logger.info(f"🛑 연속 {consecutive_seen}개 이미 본 게시글 - 스크래핑 중단")
+                    should_stop = True
+                    break
+            else:
+                # 새 게시글이면 카운터 리셋
+                consecutive_seen = 0
+                seen_article_ids.add(article_id)
+                Logger.debug(f"행 {idx}: 새 게시글 추가 (ID: {article_id})")
             
             articles.append(article_data)
         
@@ -710,6 +730,7 @@ def scrape_naver_cafe_titles(url):
     total_articles = []
     total_inserted = 0
     total_updated = 0
+    seen_article_ids = set()  # 이번 세션에서 본 게시글 ID 추적
     
     try:
         # ?�이지별로 ?�크?�핑
@@ -739,7 +760,7 @@ def scrape_naver_cafe_titles(url):
                 break
             
             # 현재 페이지의 게시글을 스크래핑
-            page_articles, should_stop = scrape_single_page(driver, wait)
+            page_articles, should_stop = scrape_single_page(driver, wait, seen_article_ids)
             
             if not page_articles and page_num == 1:
                 Logger.error("첫 페이지에서 게시글을 찾을 수 없습니다.")
