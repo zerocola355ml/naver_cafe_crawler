@@ -72,6 +72,33 @@ def view_database():
             print(f"   {idx}. {title[:60]}...")
             print(f"      조회: {reads} | 댓글: {comments} | 좋아요: {likes}")
         
+        # 인기글 통계 (hot_articles 테이블이 있으면)
+        try:
+            cursor.execute('SELECT COUNT(*) FROM hot_articles')
+            hot_total = cursor.fetchone()[0]
+            
+            if hot_total > 0:
+                print("\n" + "-" * 80)
+                print("\n🌟 인기글 정보:")
+                print(f"   총 인기글: {hot_total}개")
+                
+                cursor.execute('SELECT COUNT(*) FROM hot_articles WHERE notification_sent = 0')
+                pending = cursor.fetchone()[0]
+                print(f"   알림 대기 중: {pending}개")
+                
+                print("\n   최근 인기글 (5개):")
+                cursor.execute('''
+                    SELECT title, comment_count, read_count, like_count, detected_at
+                    FROM hot_articles 
+                    ORDER BY detected_at DESC 
+                    LIMIT 5
+                ''')
+                for idx, (title, comments, reads, likes, detected) in enumerate(cursor.fetchall(), 1):
+                    print(f"   {idx}. {title[:55]}...")
+                    print(f"      조회: {reads} | 댓글: {comments} | 좋아요: {likes} | 발견: {detected}")
+        except sqlite3.OperationalError:
+            pass  # hot_articles 테이블이 없으면 무시
+        
         print("\n" + "=" * 80)
         
         conn.close()

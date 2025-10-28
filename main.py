@@ -74,7 +74,7 @@ class Config:
     DEFAULT_URL = "https://cafe.naver.com/f-e/cafes/10094499/menus/599?viewType=L&page=1"
     
     # 로깅 설정
-    LOG_LEVEL = Logger.VERBOSE  # VERBOSE(자세), INFO(보통), QUIET(최소)
+    LOG_LEVEL = Logger.INFO  # VERBOSE(자세), INFO(보통), QUIET(최소)
     
     # 게시글 필터 설정
     SKIP_NOTICE = True      # 공지 외
@@ -82,8 +82,8 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용
-    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-    PROFILE_DIRECTORY = "Default"
+CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+PROFILE_DIRECTORY = "Default"
 
     # 페이지 로딩 설정
     PAGE_LOAD_WAIT = 15     # 페이지 로딩 대기 시간 (초)
@@ -96,6 +96,11 @@ class Config:
     # 데이터베이스 설정
     DB_FILE = "naver_cafe_articles.db"  # SQLite 데이터베이스 파일
     RETENTION_DAYS = 15                  # 보관 기간 (일)
+    
+    # 인기글 필터 기준 (AND 조건: 모든 조건을 만족해야 함)
+    HOT_ARTICLE_MIN_LIKE = 10       # 최소 좋아요 수
+    HOT_ARTICLE_MIN_READ = 100      # 최소 조회수
+    HOT_ARTICLE_MIN_COMMENT = 5     # 최소 댓글 수
     
     # 스크래핑 범위 설정
     SCRAPE_DAYS = 7         # 최근 며칠 동안의 게시글만 수집 (오늘부터 N일 전까지)
@@ -133,7 +138,7 @@ def init_database():
     conn = sqlite3.connect(Config.DB_FILE)
     cursor = conn.cursor()
     
-    # 테이블 생성 (존재하지 않으면 생성)
+    # articles 테이블 생성
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS articles (
             article_id TEXT PRIMARY KEY,
@@ -146,6 +151,36 @@ def init_database():
             first_scraped TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    ''')
+    
+    # hot_articles 테이블 생성 (인기글 추적 및 알림용)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hot_articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_id TEXT NOT NULL,
+            title TEXT,
+            comment_count INTEGER,
+            read_count INTEGER,
+            like_count INTEGER,
+            url TEXT,
+            date TEXT,
+            detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notification_sent BOOLEAN DEFAULT 0,
+            notification_sent_at TIMESTAMP,
+            notification_method TEXT,
+            FOREIGN KEY (article_id) REFERENCES articles(article_id)
+        )
+    ''')
+    
+    # hot_articles에 인덱스 추가 (빠른 조회)
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_hot_articles_article_id 
+        ON hot_articles(article_id)
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_hot_articles_notification 
+        ON hot_articles(notification_sent)
     ''')
     
     conn.commit()
@@ -261,6 +296,106 @@ def get_article_stats(conn):
         'total_count': total_count,
         'today_updated': today_updated,
         'oldest_date': oldest
+    }
+
+
+def is_hot_article(article):
+    """
+    게시글이 인기글 기준을 만족하는지 확인합니다 (AND 조건).
+    
+    Args:
+        article: 게시글 정보 딕셔너리
+    
+    Returns:
+        bool: 인기글이면 True
+    """
+    return (
+        article.get('like_count', 0) >= Config.HOT_ARTICLE_MIN_LIKE and
+        article.get('read_count', 0) >= Config.HOT_ARTICLE_MIN_READ and
+        article.get('comment_count', 0) >= Config.HOT_ARTICLE_MIN_COMMENT
+    )
+
+
+def save_hot_article(conn, article):
+    """
+    인기글을 hot_articles 테이블에 저장합니다.
+    이미 저장된 게시글은 중복 저장하지 않습니다.
+    
+    Args:
+        conn: SQLite 연결
+        article: 게시글 정보 딕셔너리
+    
+    Returns:
+        str: 'inserted', 'exists', 또는 'error'
+    """
+    cursor = conn.cursor()
+    
+    try:
+        # 이미 hot_articles에 있는지 확인
+        cursor.execute('''
+            SELECT id FROM hot_articles 
+            WHERE article_id = ?
+        ''', (article['article_id'],))
+        
+        if cursor.fetchone():
+            Logger.debug(f"인기글 이미 저장됨: {article['article_id']}")
+            return 'exists'
+        
+        # 새로 추가
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('''
+            INSERT INTO hot_articles 
+            (article_id, title, comment_count, read_count, like_count, url, date, detected_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            article['article_id'],
+            article['title'],
+            article['comment_count'],
+            article['read_count'],
+            article['like_count'],
+            article['url'],
+            article['date'],
+            now
+        ))
+        
+        conn.commit()
+        Logger.info(f"🔥 인기글 발견: {article['title'][:30]}... (좋아요:{article['like_count']}, 조회:{article['read_count']}, 댓글:{article['comment_count']})")
+        return 'inserted'
+        
+    except Exception as e:
+        Logger.debug(f"인기글 저장 오류 (ID: {article.get('article_id')}): {e}")
+        return 'error'
+
+
+def get_hot_article_stats(conn):
+    """
+    인기글 통계 정보를 반환합니다.
+    
+    Args:
+        conn: SQLite 연결
+    
+    Returns:
+        dict: 인기글 통계
+    """
+    cursor = conn.cursor()
+    
+    # 총 인기글 수
+    cursor.execute('SELECT COUNT(*) FROM hot_articles')
+    total_hot = cursor.fetchone()[0]
+    
+    # 오늘 발견된 인기글 수
+    today = datetime.now().strftime('%Y-%m-%d')
+    cursor.execute('SELECT COUNT(*) FROM hot_articles WHERE DATE(detected_at) = ?', (today,))
+    today_hot = cursor.fetchone()[0]
+    
+    # 알림 미발송 인기글 수
+    cursor.execute('SELECT COUNT(*) FROM hot_articles WHERE notification_sent = 0')
+    pending_notification = cursor.fetchone()[0]
+    
+    return {
+        'total_hot': total_hot,
+        'today_hot': today_hot,
+        'pending_notification': pending_notification
     }
 
 
@@ -710,6 +845,7 @@ def scrape_naver_cafe_titles(url):
     total_articles = []
     total_inserted = 0
     total_updated = 0
+    total_hot_articles = 0  # 인기글 카운터
     
     try:
         # ?�이지별로 ?�크?�핑
@@ -750,19 +886,31 @@ def scrape_naver_cafe_titles(url):
                 Logger.info(f"\n페이지 {page_num}의 게시글을 데이터베이스에 저장... ({len(page_articles)}개)")
                 inserted = 0
                 updated = 0
+                hot_count = 0
                 
                 for article in page_articles:
+                    # 일반 articles 테이블에 저장
                     result = save_or_update_article(db_conn, article)
                     if result == 'inserted':
                         inserted += 1
                     elif result == 'updated':
                         updated += 1
+                    
+                    # 인기글 조건 체크 및 저장
+                    if is_hot_article(article):
+                        hot_result = save_hot_article(db_conn, article)
+                        if hot_result == 'inserted':
+                            hot_count += 1
+                            total_hot_articles += 1
                 
                 total_inserted += inserted
                 total_updated += updated
                 total_articles.extend(page_articles)
                 
-                Logger.success(f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개")
+                if hot_count > 0:
+                    Logger.success(f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개, 인기글: {hot_count}개")
+        else:
+                    Logger.success(f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개")
             
             # 중단 조건 ?�인
             if should_stop:
@@ -795,6 +943,16 @@ def scrape_naver_cafe_titles(url):
         Logger.info(f"  오늘 업데이트된 게시글: {stats['today_updated']}개")
         if stats['oldest_date']:
             Logger.info(f"  가장 오래된 게시글: {stats['oldest_date']}")
+        
+        # 인기글 통계
+        hot_stats = get_hot_article_stats(db_conn)
+        if total_hot_articles > 0 or hot_stats['total_hot'] > 0:
+            Logger.info(f"\n🔥 인기글 통계:")
+            Logger.info(f"  이번 실행에서 발견: {total_hot_articles}개")
+            Logger.info(f"  총 인기글: {hot_stats['total_hot']}개")
+            Logger.info(f"  오늘 발견된 인기글: {hot_stats['today_hot']}개")
+            Logger.info(f"  알림 대기 중: {hot_stats['pending_notification']}개")
+            Logger.info(f"\n💡 인기글 기준: 좋아요 {Config.HOT_ARTICLE_MIN_LIKE}+ AND 조회수 {Config.HOT_ARTICLE_MIN_READ}+ AND 댓글 {Config.HOT_ARTICLE_MIN_COMMENT}+")
         
         # 스크래핑 결과를 파일에 저장
         if total_articles:
