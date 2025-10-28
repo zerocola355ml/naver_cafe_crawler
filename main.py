@@ -102,6 +102,9 @@ class Config:
     HOT_ARTICLE_MIN_READ = 100      # 최소 조회수
     HOT_ARTICLE_MIN_COMMENT = 5     # 최소 댓글 수
     
+    # 키워드 필터 (인기글 중 키워드 포함 게시글 별도 추적)
+    KEYWORDS = ['기저귀', '유산균', '바이오가이아', '분유', '물티슈']  # 관심 키워드 리스트
+    
     # 스크래핑 범위 설정
     SCRAPE_DAYS = 7         # 최근 며칠 동안의 게시글만 수집 (오늘부터 N일 전까지)
     MAX_PAGES = 50          # 최대 페이지 수 (무한 루프 방지)
@@ -181,6 +184,37 @@ def init_database():
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_hot_articles_notification 
         ON hot_articles(notification_sent)
+    ''')
+    
+    # keyword_articles 테이블 생성 (인기글 + 키워드 포함)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS keyword_articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_id TEXT NOT NULL,
+            title TEXT,
+            comment_count INTEGER,
+            read_count INTEGER,
+            like_count INTEGER,
+            url TEXT,
+            date TEXT,
+            matched_keywords TEXT,
+            detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notification_sent BOOLEAN DEFAULT 0,
+            notification_sent_at TIMESTAMP,
+            notification_method TEXT,
+            FOREIGN KEY (article_id) REFERENCES articles(article_id)
+        )
+    ''')
+    
+    # keyword_articles에 인덱스 추가
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_keyword_articles_article_id 
+        ON keyword_articles(article_id)
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_keyword_articles_notification 
+        ON keyword_articles(notification_sent)
     ''')
     
     conn.commit()
@@ -395,6 +429,114 @@ def get_hot_article_stats(conn):
     return {
         'total_hot': total_hot,
         'today_hot': today_hot,
+        'pending_notification': pending_notification
+    }
+
+
+def check_keywords(article, keywords):
+    """
+    게시글 제목에 키워드가 포함되어 있는지 확인합니다.
+    
+    Args:
+        article: 게시글 정보 딕셔너리
+        keywords: 키워드 리스트
+    
+    Returns:
+        list: 매칭된 키워드 리스트 (없으면 빈 리스트)
+    """
+    title = article.get('title', '').lower()
+    matched = []
+    
+    for keyword in keywords:
+        if keyword.lower() in title:
+            matched.append(keyword)
+    
+    return matched
+
+
+def save_keyword_article(conn, article, matched_keywords):
+    """
+    키워드를 포함한 인기글을 keyword_articles 테이블에 저장합니다.
+    
+    Args:
+        conn: SQLite 연결
+        article: 게시글 정보 딕셔너리
+        matched_keywords: 매칭된 키워드 리스트
+    
+    Returns:
+        str: 'inserted', 'exists', 또는 'error'
+    """
+    cursor = conn.cursor()
+    
+    try:
+        # 이미 keyword_articles에 있는지 확인
+        cursor.execute('''
+            SELECT id FROM keyword_articles 
+            WHERE article_id = ?
+        ''', (article['article_id'],))
+        
+        if cursor.fetchone():
+            Logger.debug(f"키워드 인기글 이미 저장됨: {article['article_id']}")
+            return 'exists'
+        
+        # 새로 추가
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        keywords_str = ', '.join(matched_keywords)
+        
+        cursor.execute('''
+            INSERT INTO keyword_articles 
+            (article_id, title, comment_count, read_count, like_count, url, date, 
+             matched_keywords, detected_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            article['article_id'],
+            article['title'],
+            article['comment_count'],
+            article['read_count'],
+            article['like_count'],
+            article['url'],
+            article['date'],
+            keywords_str,
+            now
+        ))
+        
+        conn.commit()
+        Logger.info(f"⭐ 키워드 인기글 발견: {article['title'][:30]}... [키워드: {keywords_str}]")
+        return 'inserted'
+        
+    except Exception as e:
+        Logger.debug(f"키워드 인기글 저장 오류 (ID: {article.get('article_id')}): {e}")
+        return 'error'
+
+
+def get_keyword_article_stats(conn):
+    """
+    키워드 인기글 통계 정보를 반환합니다.
+    
+    Args:
+        conn: SQLite 연결
+    
+    Returns:
+        dict: 키워드 인기글 통계
+    """
+    cursor = conn.cursor()
+    
+    # 총 키워드 인기글 수
+    cursor.execute('SELECT COUNT(*) FROM keyword_articles')
+    total_keyword = cursor.fetchone()[0]
+    
+    # 오늘 발견된 키워드 인기글 수
+    today = datetime.now().strftime('%Y-%m-%d')
+    cursor.execute('SELECT COUNT(*) FROM keyword_articles WHERE DATE(detected_at) = ?', (today,))
+    today_keyword = cursor.fetchone()[0]
+    
+    # 알림 미발송 키워드 인기글 수
+    cursor.execute('SELECT COUNT(*) FROM keyword_articles WHERE notification_sent = 0')
+    pending_notification = cursor.fetchone()[0]
+    
+    return {
+        'total_keyword': total_keyword,
+        'today_keyword': today_keyword,
         'pending_notification': pending_notification
     }
 
@@ -845,7 +987,8 @@ def scrape_naver_cafe_titles(url):
     total_articles = []
     total_inserted = 0
     total_updated = 0
-    total_hot_articles = 0  # 인기글 카운터
+    total_hot_articles = 0      # 인기글 카운터
+    total_keyword_articles = 0  # 키워드 인기글 카운터
     
     try:
         # ?�이지별로 ?�크?�핑
@@ -887,6 +1030,7 @@ def scrape_naver_cafe_titles(url):
                 inserted = 0
                 updated = 0
                 hot_count = 0
+                keyword_count = 0
                 
                 for article in page_articles:
                     # 일반 articles 테이블에 저장
@@ -902,15 +1046,26 @@ def scrape_naver_cafe_titles(url):
                         if hot_result == 'inserted':
                             hot_count += 1
                             total_hot_articles += 1
+                        
+                        # 인기글 중 키워드 포함 여부 체크
+                        matched_keywords = check_keywords(article, Config.KEYWORDS)
+                        if matched_keywords:
+                            keyword_result = save_keyword_article(db_conn, article, matched_keywords)
+                            if keyword_result == 'inserted':
+                                keyword_count += 1
+                                total_keyword_articles += 1
                 
                 total_inserted += inserted
                 total_updated += updated
                 total_articles.extend(page_articles)
                 
+                # 로그 메시지 생성
+                log_msg = f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개"
                 if hot_count > 0:
-                    Logger.success(f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개, 인기글: {hot_count}개")
-                else:
-                    Logger.success(f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개")
+                    log_msg += f", 인기글: {hot_count}개"
+                if keyword_count > 0:
+                    log_msg += f", 키워드 인기글: {keyword_count}개"
+                Logger.success(log_msg)
             
             # 중단 조건 ?�인
             if should_stop:
@@ -953,6 +1108,16 @@ def scrape_naver_cafe_titles(url):
             Logger.info(f"  오늘 발견된 인기글: {hot_stats['today_hot']}개")
             Logger.info(f"  알림 대기 중: {hot_stats['pending_notification']}개")
             Logger.info(f"\n💡 인기글 기준: 좋아요 {Config.HOT_ARTICLE_MIN_LIKE}+ AND 조회수 {Config.HOT_ARTICLE_MIN_READ}+ AND 댓글 {Config.HOT_ARTICLE_MIN_COMMENT}+")
+        
+        # 키워드 인기글 통계
+        keyword_stats = get_keyword_article_stats(db_conn)
+        if total_keyword_articles > 0 or keyword_stats['total_keyword'] > 0:
+            Logger.info(f"\n⭐ 키워드 인기글 통계:")
+            Logger.info(f"  이번 실행에서 발견: {total_keyword_articles}개")
+            Logger.info(f"  총 키워드 인기글: {keyword_stats['total_keyword']}개")
+            Logger.info(f"  오늘 발견된 키워드 인기글: {keyword_stats['today_keyword']}개")
+            Logger.info(f"  알림 대기 중: {keyword_stats['pending_notification']}개")
+            Logger.info(f"\n🔍 키워드: {', '.join(Config.KEYWORDS)}")
         
         # 스크래핑 결과를 파일에 저장
         if total_articles:
