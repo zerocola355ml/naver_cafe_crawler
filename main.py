@@ -82,8 +82,8 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용
-CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-PROFILE_DIRECTORY = "Default"
+    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+    PROFILE_DIRECTORY = "Default"
 
     # 페이지 로딩 설정
     PAGE_LOAD_WAIT = 15     # 페이지 로딩 대기 시간 (초)
@@ -909,7 +909,7 @@ def scrape_naver_cafe_titles(url):
                 
                 if hot_count > 0:
                     Logger.success(f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개, 인기글: {hot_count}개")
-        else:
+                else:
                     Logger.success(f"페이지 {page_num} 스크래핑 완료 - 삽입: {inserted}개, 업데이트: {updated}개")
             
             # 중단 조건 ?�인
