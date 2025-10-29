@@ -82,8 +82,8 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용
-CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-PROFILE_DIRECTORY = "Default"
+    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+    PROFILE_DIRECTORY = "Default"
 
     # 페이지 로딩 설정 (동적 대기로 실제 더 빠름)
     PAGE_LOAD_TIMEOUT = 20      # 페이지 로딩 최대 대기 시간 (초)
