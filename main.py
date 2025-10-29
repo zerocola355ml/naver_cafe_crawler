@@ -82,13 +82,14 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용
-    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-    PROFILE_DIRECTORY = "Default"
+CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+PROFILE_DIRECTORY = "Default"
 
-    # 페이지 로딩 설정
-    PAGE_LOAD_WAIT = 15     # 페이지 로딩 대기 시간 (초)
-    ELEMENT_WAIT = 20       # 요소 대기 시간 (초)
-    SELECTOR_WAIT = 5       # 선택자 대기 시간 (초)
+    # 페이지 로딩 설정 (동적 대기로 실제 더 빠름)
+    PAGE_LOAD_TIMEOUT = 20      # 페이지 로딩 최대 대기 시간 (초)
+    ELEMENT_WAIT = 15           # 요소 대기 최대 시간 (초)
+    SELECTOR_WAIT = 5           # 선택자 시도 시간 (초)
+    PAGE_TRANSITION_WAIT = 0.5  # 페이지 간 전환 대기 (초)
     
     # 출력 파일 설정
     OUTPUT_FILE = "scraped_articles.txt"
@@ -553,6 +554,45 @@ def get_keyword_article_stats(conn):
 
 # ===================== 유틸리티 함수 =====================
 
+def wait_for_page_load(driver, timeout=20):
+    """
+    페이지가 완전히 로드될 때까지 동적으로 대기합니다.
+    
+    Args:
+        driver: Selenium WebDriver
+        timeout: 최대 대기 시간 (초)
+    
+    Returns:
+        bool: 로딩 성공 여부
+    """
+    try:
+        # 1. document.readyState가 'complete'가 될 때까지 대기
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script('return document.readyState') == 'complete'
+        )
+        Logger.debug("페이지 로드 완료 (readyState)")
+        
+        # 2. jQuery가 있으면 Ajax 완료 대기
+        try:
+            has_jquery = driver.execute_script('return typeof jQuery != "undefined"')
+            if has_jquery:
+                WebDriverWait(driver, 3).until(
+                    lambda d: d.execute_script('return jQuery.active == 0')
+                )
+                Logger.debug("Ajax 요청 완료")
+        except:
+            pass  # jQuery 없으면 무시
+        
+        return True
+        
+    except TimeoutException:
+        Logger.warning(f"페이지 로딩 타임아웃 ({timeout}초)")
+        return False
+    except Exception as e:
+        Logger.debug(f"페이지 로딩 확인 오류: {e}")
+        return False
+
+
 def parse_article_date(date_str):
     """
     게시글 생성일을 파싱합니다.
@@ -877,26 +917,22 @@ def scrape_single_page(driver, wait):
     should_stop = False
     
     try:
-        # 페이지 완전 로딩 대기
-        Logger.debug("페이지가 완전히 로드될 때까지 대기 중...")
+        # 페이지 완전 로딩 대기 (동적)
+        Logger.debug("페이지 로딩 감지 중...")
         
-        # 재시도 로직 추가 (최대 3번)
-        table_found = False
-        for attempt in range(3):
-            try:
-                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.article-table")))
-                Logger.debug(f"페이지 로드 완료! (시도 {attempt + 1}/3)")
-                table_found = True
-                time.sleep(2)  # 추가 안정화
-                break
-            except TimeoutException:
-                if attempt < 2:
-                    Logger.debug(f"article-table 로딩 재시도 중... ({attempt + 1}/3)")
-                    time.sleep(3)
-                else:
-                    Logger.warning("article-table을 찾을 수 없습니다.")
-        
-        if not table_found:
+        # article-table이 로드될 때까지 대기 (동적, 최대 Config.ELEMENT_WAIT초)
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.article-table")))
+            Logger.debug("article-table 발견!")
+            
+            # 추가 안정화: 테이블이 실제로 채워질 때까지 대기
+            WebDriverWait(driver, 5).until(
+                lambda d: len(d.find_elements(By.CSS_SELECTOR, "table.article-table tr")) > 0
+            )
+            Logger.debug("테이블 행 로딩 완료!")
+            
+        except TimeoutException:
+            Logger.warning("article-table을 찾을 수 없습니다.")
             return articles, True  # 중단
         
         # 게시글 tr) 찾기
@@ -1015,16 +1051,16 @@ def scrape_naver_cafe_titles(url):
                 driver.get(page_url)
                 Logger.success("URL 로딩 시작...")
                 
-                # 페이지 로딩 대기
-                Logger.debug(f"페이지 로딩 대기 중... ({Config.PAGE_LOAD_WAIT}초)")
-                time.sleep(Config.PAGE_LOAD_WAIT)
+                # 페이지 로딩 동적 대기 (로드되면 즉시 진행)
+                if not wait_for_page_load(driver, Config.PAGE_LOAD_TIMEOUT):
+                    Logger.warning("페이지 로딩 타임아웃")
                 
                 # 실제 로드된 URL 확인
                 current_url = driver.current_url
                 Logger.debug(f"현재 URL: {current_url}")
                 
             except Exception as e:
-                Logger.error(f"URL 로딩 실패: {e}")
+                Logger.error(f"URL 이동 실패: {e}")
                 break
             
             # 현재 페이지의 게시글을 스크래핑
@@ -1089,8 +1125,8 @@ def scrape_naver_cafe_titles(url):
             
             # 다음 페이지로 이동 (서버 부하 방지)
             if page_num < Config.MAX_PAGES:
-                Logger.debug(f"다음 페이지로 이동... (3초 대기)")
-                time.sleep(3)
+                Logger.debug(f"다음 페이지로 이동... ({Config.PAGE_TRANSITION_WAIT}초 대기)")
+                time.sleep(Config.PAGE_TRANSITION_WAIT)
 
         # 최종 결과 출력
         Logger.separator()
