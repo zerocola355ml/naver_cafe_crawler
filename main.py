@@ -106,9 +106,14 @@ class Config:
     KEYWORDS = ['기저귀', '유산균', '바이오가이아', '물티슈']  # 관심 키워드 리스트
     
     # 텔레그램 알림 설정
-    TELEGRAM_ENABLED = False  # 텔레그램 알림 사용 여부
-    TELEGRAM_BOT_TOKEN = ""   # 텔레그램 봇 토큰 (BotFather에서 발급)
-    TELEGRAM_CHAT_ID = ""     # 텔레그램 Chat ID
+    TELEGRAM_ENABLED = True  # 텔레그램 알림 사용 여부
+    
+    # 텔레그램 토큰 (config_secret.py에서 불러오기 - GitHub에 안전)
+    try:
+        from config_secret import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    except ImportError:
+        TELEGRAM_BOT_TOKEN = ""  # config_secret.py가 없으면 빈 값
+        TELEGRAM_CHAT_ID = ""
     
     # 스크래핑 범위 설정
     SCRAPE_DAYS = 7         # 최근 며칠 동안의 게시글만 수집 (오늘부터 N일 전까지)

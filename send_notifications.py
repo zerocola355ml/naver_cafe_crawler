@@ -9,11 +9,7 @@ import sqlite3
 import requests
 from datetime import datetime
 
-# Windows 콘솔 인코딩 설정
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
-
-# main.py에서 설정 가져오기
+# main.py에서 설정 가져오기 (먼저 import - stdout 설정은 main에서 처리)
 try:
     from main import Config
     DB_FILE = Config.DB_FILE
