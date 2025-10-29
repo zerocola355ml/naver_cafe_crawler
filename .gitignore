@@ -36,3 +36,7 @@ Thumbs.db
 *.backup
 *.broken
 
+# Secret configuration (Telegram tokens)
+config_secret.py
+.env
+
