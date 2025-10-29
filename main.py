@@ -82,8 +82,8 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용
-    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-    PROFILE_DIRECTORY = "Default"
+CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+PROFILE_DIRECTORY = "Default"
     HEADLESS_MODE = False   # 서버에서 실행 시 True로 변경 (화면 없이 실행)
 
     # 페이지 로딩 설정 (동적 대기로 실제 더 빠름)
@@ -1181,6 +1181,21 @@ def scrape_naver_cafe_titles(url):
         if total_articles:
             Logger.separator()
             save_articles_to_file(total_articles, url, "multi-page", Config.OUTPUT_FILE)
+        
+        # 텔레그램 알림 발송 (활성화된 경우)
+        if Config.TELEGRAM_ENABLED:
+            keyword_stats = get_keyword_article_stats(db_conn)
+            if keyword_stats['pending_notification'] > 0:
+                Logger.separator()
+                Logger.info(f"\n📱 텔레그램 알림 발송 중... ({keyword_stats['pending_notification']}개)")
+                try:
+                    from send_notifications import send_pending_notifications
+                    send_pending_notifications()
+                except Exception as e:
+                    Logger.warning(f"알림 발송 실패: {e}")
+                    Logger.info("수동 실행: python send_notifications.py")
+        else:
+                Logger.debug("발송할 알림이 없습니다.")
     
     except KeyboardInterrupt:
         Logger.separator()
