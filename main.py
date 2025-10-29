@@ -84,6 +84,7 @@ class Config:
     USE_PROFILE = False     # Chrome 프로필 사용
     CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
     PROFILE_DIRECTORY = "Default"
+    HEADLESS_MODE = False   # 서버에서 실행 시 True로 변경 (화면 없이 실행)
 
     # 페이지 로딩 설정 (동적 대기로 실제 더 빠름)
     PAGE_LOAD_TIMEOUT = 20      # 페이지 로딩 최대 대기 시간 (초)
@@ -690,11 +691,22 @@ def setup_chrome_driver():
         options.add_argument(f"user-data-dir={Config.CHROME_PROFILE_PATH}")
         options.add_argument(f"profile-directory={Config.PROFILE_DIRECTORY}")
     
+    # Headless 모드 (서버용)
+    if Config.HEADLESS_MODE:
+        options.add_argument('--headless=new')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1920,1080')
+        Logger.debug("Headless 모드로 실행")
+    else:
+        options.add_argument("--start-maximized")
+        Logger.debug("일반 모드로 실행")
+    
     # Chrome 옵션 (자동화 제어 비활성화)
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
-    options.add_argument("--start-maximized")
     
     try:
         Logger.info("\n브라우저 작업 시작...")
