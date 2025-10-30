@@ -36,35 +36,53 @@ class Logger:
     def debug(msg):
         """디버그 메시지 (VERBOSE 레벨에서만 출력)"""
         if Logger.level >= Logger.VERBOSE:
-            print(f"[DEBUG] {msg}")
+            try:
+                print(f"[DEBUG] {msg}")
+            except (ValueError, IOError):
+                pass  # Headless 환경에서 I/O 에러 무시
     
     @staticmethod
     def info(msg):
         """일반 정보 메시지 (INFO 레벨 이상에서 출력)"""
         if Logger.level >= Logger.INFO:
-            print(msg)
+            try:
+                print(msg)
+            except (ValueError, IOError):
+                pass  # Headless 환경에서 I/O 에러 무시
     
     @staticmethod
     def success(msg):
         """성공 메시지 (INFO 레벨 이상에서 출력)"""
         if Logger.level >= Logger.INFO:
-            print(f"✓ {msg}")
+            try:
+                print(f"✓ {msg}")
+            except (ValueError, IOError):
+                pass  # Headless 환경에서 I/O 에러 무시
     
     @staticmethod
     def warning(msg):
         """경고 메시지 (항상 출력)"""
-        print(f"⚠️ {msg}")
+        try:
+            print(f"⚠️ {msg}")
+        except (ValueError, IOError):
+            pass  # Headless 환경에서 I/O 에러 무시
     
     @staticmethod
     def error(msg):
         """에러 메시지 (항상 출력)"""
-        print(f"❌ {msg}")
+        try:
+            print(f"❌ {msg}")
+        except (ValueError, IOError):
+            pass  # Headless 환경에서 I/O 에러 무시
     
     @staticmethod
     def separator(char="=", length=60):
         """구분선 (INFO 레벨 이상에서 출력)"""
         if Logger.level >= Logger.INFO:
-            print(char * length)
+            try:
+                print(char * length)
+            except (ValueError, IOError):
+                pass  # Headless 환경에서 I/O 에러 무시
 
 # ===================== 설정 클래스 =====================
 class Config:
@@ -105,7 +123,16 @@ class Config:
     HOT_ARTICLE_MIN_COMMENT = 5     # 최소 댓글 수
     
     # 키워드 필터 (인기글 중 키워드 포함 게시글 별도 추적)
-    KEYWORDS = ['기저귀', '유산균', '바이오가이아', '물티슈']  # 관심 키워드 리스트
+    # keywords.txt 파일에서 읽기 (한 줄에 하나씩)
+    try:
+        import os
+        keyword_file = os.path.join(os.path.dirname(__file__), 'keywords.txt')
+        with open(keyword_file, 'r', encoding='utf-8') as f:
+            KEYWORDS = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+        if not KEYWORDS:
+            KEYWORDS = ['기저귀', '유산균', '바이오가이아', '물티슈']  # 기본값
+    except FileNotFoundError:
+        KEYWORDS = ['기저귀', '유산균', '바이오가이아', '물티슈']  # 파일 없으면 기본값
     
     # 텔레그램 알림 설정
     TELEGRAM_ENABLED = True  # 텔레그램 알림 사용 여부
