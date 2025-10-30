@@ -82,8 +82,8 @@ class Config:
     
     # 브라우저 설정
     USE_PROFILE = False     # Chrome 프로필 사용
-CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
-PROFILE_DIRECTORY = "Default"
+    CHROME_PROFILE_PATH = "C:\\Users\\tlsgj\\AppData\\Local\\Google\\Chrome\\User Data"
+    PROFILE_DIRECTORY = "Default"
     HEADLESS_MODE = False   # 서버에서 실행 시 True로 변경 (화면 없이 실행)
 
     # 페이지 로딩 설정 (동적 대기로 실제 더 빠름)

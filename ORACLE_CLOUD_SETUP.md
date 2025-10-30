@@ -175,8 +175,9 @@ nano config_secret.py
 내용 입력:
 ```python
 # 텔레그램 설정
-TELEGRAM_BOT_TOKEN = "8468153847:AAF5omyTYxB0L9YLdVaL_ByM6wEBcyIe4l0"
-TELEGRAM_CHAT_ID = "779885713"
+# 텔레그램 설정
+TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
 ```
 
 저장: `Ctrl+X` → `Y` → `Enter`
